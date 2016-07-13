@@ -1,0 +1,21 @@
+"Games"
+{
+	"csgo"
+	{
+		"Offsets"
+		{
+			"ReloadOrSwitchWeapons"
+			{
+				"windows"	"292"
+				"linux"		"298"
+				"mac"		"298"
+			}
+			"FinishReload"
+			{
+				"windows"	"304"
+				"linux"		"310"
+				"mac"		"310"
+			}
+		}
+	}
+}
