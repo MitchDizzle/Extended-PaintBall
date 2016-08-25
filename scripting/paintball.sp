@@ -187,13 +187,13 @@ public void fireWeapon(int client) {
 	//PrintToChatAll("m_bReloadVisuallyComplete: %i", GetEntProp(weapon, Prop_Send, "m_bReloadVisuallyComplete"));
 	int clip = GetEntProp(weapon, Prop_Send, "m_iClip1");
 	if(clip <= 0) {
-		callReloadOrSwitchWeapons(weapon);
+		callReloadOrSwitchWeapons(client, weapon);
 		return;
 	}
 	SetEntProp(weapon, Prop_Send, "m_iClip1", clip-1);
 	SetEntProp(client, Prop_Send, "m_iShotsFired", GetEntProp(client, Prop_Send, "m_iShotsFired")+1);
 	if(clip < 1) {
-		callReloadOrSwitchWeapons(weapon);
+		callReloadOrSwitchWeapons(client, weapon);
 	}
 	
 	int paintBall = createPaintball(client);
@@ -384,9 +384,10 @@ public bool TraceEntityFilterPlayer(int entity, int contentsMask, int client) {
 	return (entity >= 0 && entity != client);
 }
 
-public void callReloadOrSwitchWeapons(int weapon) {
+public void callReloadOrSwitchWeapons(int client, int weapon) {
 	float gameTime = GetGameTime();
 	SetEntPropFloat(weapon, Prop_Send, "m_flNextPrimaryAttack", gameTime-1.0);
 	SDKCall(hReloadOrSwitchWeapons, weapon);
+	setNextShoot(client, GetEntPropFloat(weapon, Prop_Send, "m_flNextPrimaryAttack") - gameTime);
 	SetEntPropFloat(weapon, Prop_Send, "m_flNextPrimaryAttack", gameTime+36000.0);
 }
