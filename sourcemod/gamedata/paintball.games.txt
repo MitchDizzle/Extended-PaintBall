@@ -8,13 +8,16 @@
 			{
 				"windows"	"292"
 				"linux"		"298"
-				"mac"		"298"
 			}
-			"FinishReload"
+			"GetDamage"
 			{
-				"windows"	"304"
-				"linux"		"310"
-				"mac"		"310"
+				"windows"	"332"
+				"linux"		"338"
+			}
+			"GetFireRate"
+			{
+				"windows"	"319"
+				"linux"		"325"
 			}
 		}
 	}
