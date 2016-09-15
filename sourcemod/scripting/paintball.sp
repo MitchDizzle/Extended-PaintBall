@@ -1,14 +1,15 @@
 #pragma semicolon 1
 #include <sdktools>
 #include <sdkhooks>
-#include <WeaponAttachmentAPI>
 #include <DHooks>
+//Maybe make this optional?
+#include <WeaponAttachmentAPI>
 
+//CSGO Specefics
 #define LASER_SPRITE "materials/sprites/laserbeam.vmt"
 #define PB_SPLATTER "materials/decals/decal_paintsplatter002.vmt"
 #define PB_MODEL "models/props/cs_office/plant01_gib1.mdl"
 
-//"models/props/cs_italy/orange.mdl"
 bool plyPaintBall[MAXPLAYERS+1] = {false, ...};
 float plyNextShoot[MAXPLAYERS+1];
 int precache_laser;
@@ -20,13 +21,26 @@ float plyDamage[MAXPLAYERS+1];
 float plyCycle[MAXPLAYERS+1];
 bool plyEnabled[MAXPLAYERS+1];
 
+//Weapon configs
+// If not defined then it will use defaults.
 #define MAXWEAPONS 50
-//bool wcEnabled[MAXWEAPONS];
-bool wcAuto[MAXWEAPONS];
+bool wcEnable[MAXWEAPONS];
+bool wcAuto[MAXWEAPONS]; 
 float wcDamage[MAXWEAPONS];
 float wcCycle[MAXWEAPONS];
+int wcCustomImpactSound; //Also stores how many different sounds there are for this weapon.
+char wcImpactSound[MAXWEAPONS][MAXSOUNDS][128];
+int wcCustomFireSound;
+char wcFireSound[MAXWEAPONS][MAXSOUNDS][128];
 int wcCount = 0;
 StringMap wcWeaponLookup;
+
+//Default sounds:
+#define MAXSOUNDS 10
+int pbcImpactSoundCount;
+char pbcImpactSound[MAXSOUNDS][128];
+int pbcFireSoundCount;
+char pbcFireSound[MAXSOUNDS][128]
 
 static const int teamColors[4][4] = {
 	{255,255,255,255},
@@ -48,6 +62,8 @@ static const char sndFire[1][] = {
 
 /* Convars */
 ConVar cEnabled;
+ConVar cDmgMultiplier;
+ConVar cSpeedMultiplier;
 
 #define PLUGIN_VERSION "1.0.0"
 public Plugin myinfo = {
@@ -61,13 +77,15 @@ public Plugin myinfo = {
 public OnPluginStart() {
 	
 	cEnabled = CreateConVar("sm_paintball_enable", "1", "Enable PaintBall");
-	
+	cEnabled = CreateConVar("sm_paintball_damage", "1.0", "Paintball Damage Multiplier");
+	cEnabled = CreateConVar("sm_paintball_speed", "1.0", "Paintball Speed Multiplier"); //Too fast and it wont shoot straight.
+
 	RegConsoleCmd("sm_paintball", Command_PaintBall, "Enable PaintBall mode");
-	
-	loadConfig();
-	
+
 	loadOffsets();
-	
+
+	loadConfig();
+
 	for(int i = 1; i <= MaxClients; i++) {
 		if(IsClientInGame(i)) {
 			OnClientPutInServer(i);
@@ -259,16 +277,25 @@ public Action OnPaintBallTouch(int paintBall, int other) {
 
 public Action OnWeaponSwitch(int client, int weapon) {
 	if(plyPaintBall[client]) {
-		setWeaponNextShoot(weapon, 3600000.0);
-		setNextShoot(client, 1.0);
 		int index = GetEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex");
 		char tempString[32];
 		IntToString(index, tempString, sizeof(tempString));
+		
 		if(wcWeaponLookup.GetValue(tempString,index)) {
-			plyAuto[client] = wcAuto[index];
-			plyDamage[client] = getDamage(weapon);//wcDamage[index];
-			plyCycle[client] = getFireRateWeapon(weapon);//wcCycle[index];
-			plyEnabled[client] = true;
+			if(wcEnable[index]) {
+				setWeaponNextShoot(weapon, 3600000.0);
+				setNextShoot(client, 1.0);
+				plyAuto[client] = wcAuto[index];
+				plyDamage[client] = getDamage(weapon);//wcDamage[index];
+				plyCycle[client] = getFireRateWeapon(weapon);//wcCycle[index];
+				plyEnabled[client] = true;
+			} else {
+				setNextShoot(client, 1.0);
+				plyAuto[client] = 0;
+				plyDamage[client] = 0.0;
+				plyCycle[client] = 0.0;
+				plyEnabled[client] = false;
+			}
 		} else {
 			plyEnabled[client] = false;
 		}
@@ -342,30 +369,29 @@ public bool TraceEntityFilterPlayer(int entity, int contentsMask, int client) {
 	return (entity >= 0 && entity != client);
 }
 
-Handle hReloadOrSwitchWeapons = INVALID_HANDLE;
-Handle hGetFireRate = INVALID_HANDLE;
-Handle hGetDamage = INVALID_HANDLE;
+Handle hReloadOrSwitchWeapons;
+Handle hGetFireRate;
+Handle hGetDamage;
 public void loadOffsets() {
 	Handle hGameConf = LoadGameConfigFile("paintball.games");
 	
 	StartPrepSDKCall(SDKCall_Entity);
 	PrepSDKCall_SetFromConf(hGameConf, SDKConf_Virtual, "ReloadOrSwitchWeapons");
-	if ((hReloadOrSwitchWeapons = EndPrepSDKCall()) == INVALID_HANDLE) {
-		SetFailState("[PaintBall] Unable to load ReloadOrSwitchWeapons offset");
+	if ((hReloadOrSwitchWeapons = EndPrepSDKCall()) == null) {
+		LogError("[PaintBall] Unable to load ReloadOrSwitchWeapons offset");
 	}
 	
 	StartPrepSDKCall(SDKCall_Entity);
 	PrepSDKCall_SetFromConf(hGameConf, SDKConf_Virtual, "GetFireRate");
-	if ((hGetFireRate = EndPrepSDKCall()) == INVALID_HANDLE) {
-		SetFailState("[PaintBall] Unable to load GetFireRate offset");
+	if ((hGetFireRate = EndPrepSDKCall()) == null) {
+		LogError("[PaintBall] Unable to load GetFireRate offset");
 	}
 	
 	StartPrepSDKCall(SDKCall_Entity);
 	PrepSDKCall_SetFromConf(hGameConf, SDKConf_Virtual, "GetDamage");
-	if ((hGetDamage = EndPrepSDKCall()) == INVALID_HANDLE) {
-		SetFailState("[PaintBall] Unable to load GetFireRate offset");
+	if ((hGetDamage = EndPrepSDKCall()) == null) {
+		LogError("[PaintBall] Unable to load GetFireRate offset");
 	}
-
 }
 
 public void reloadOrSwitchWeapons(int client, int weapon) {
