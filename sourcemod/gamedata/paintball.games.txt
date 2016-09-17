@@ -9,15 +9,25 @@
 				"windows"	"292"
 				"linux"		"298"
 			}
+			"Reload"
+			{
+				"windows"	"306"
+				"linux"		"312"
+			}
 			"GetDamage"
 			{
 				"windows"	"332"
 				"linux"		"338"
 			}
-			"GetFireRate"
+			"GetCycleTime"
 			{
-				"windows"	"319"
-				"linux"		"325"
+				"windows"	"414"
+				"linux"		"420"
+			}
+			"GetMaxClip1"
+			{
+				"windows"	"347"
+				"linux"		"353"
 			}
 		}
 	}
