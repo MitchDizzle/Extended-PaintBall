@@ -21,21 +21,21 @@ int pb_spray;
 bool plyAuto[MAXPLAYERS+1];
 float plyDamage[MAXPLAYERS+1];
 float plyCycle[MAXPLAYERS+1];
+int plyBullets[MAXPLAYERS+1];
 int plyMaxClip[MAXPLAYERS+1];
 bool plyEnabled[MAXPLAYERS+1];
 
 //Weapon configs
 // If not defined then it will use defaults.
 #define MAXWEAPONS 50
-//bool wcEnable[MAXWEAPONS];
 bool wcAuto[MAXWEAPONS]; 
 float wcDamage[MAXWEAPONS];
+int wcBullets[MAXPLAYERS+1];
 float wcCycle[MAXWEAPONS];
 /*int wcCustomImpactSound; //Also stores how many different sounds there are for this weapon.
 char wcImpactSound[MAXWEAPONS][MAXSOUNDS][128];
 int wcCustomFireSound;
 char wcFireSound[MAXWEAPONS][MAXSOUNDS][128];*/
-int wcCount = 0;
 StringMap wcWeaponLookup;
 
 //We need to have a system to prevent spawning too many bullets.
@@ -107,6 +107,7 @@ public OnPluginStart() {
 	//Events
 	HookEvent("round_start", Event_RoundStart);
 	HookEvent("round_freeze_end", Event_RoundFreezeEnd);
+	HookEvent("weapon_reload", Event_WeaponReload);
 
 	for(int i = 1; i <= MaxClients; i++) {
 		if(IsClientInGame(i)) {
@@ -141,13 +142,17 @@ public void Event_RoundFreezeEnd(Event event, const char[] name, bool dontBroadc
 	playersCanShoot = true;
 }
 
+public void Event_WeaponReload(Event event, const char[] name, bool dontBroadcast) {
+	//We should reset the player's firedshots here..
+	PrintToChatAll("Reload!");
+}
+
 public void OnClientPutInServer(int client) {
 	SDKHook(client, SDKHook_WeaponSwitch, OnWeaponSwitch);
 }
 
 public void loadConfig() {
 	wcWeaponLookup = new StringMap();
-	wcCount = 0;
 	char sPaths[PLATFORM_MAX_PATH];
 	BuildPath(Path_SM, sPaths, sizeof(sPaths),"configs/paintball_weapons.cfg");
 	Handle kv = CreateKeyValues("PBWeapons");
@@ -156,36 +161,37 @@ public void loadConfig() {
 		SetFailState("Unable to load config");
 		return;
 	}
-	char tempText[32];
-	char tempText2[32];
-	int tempInt = 0;
+	char sectionName[64];
 	int tc;
 	do {
-		wcCount++;
-		tc = wcCount;
-		KvGetSectionName(kv, tempText, 12);
-		//Easier lookup later on.
-		tempInt = KvGetNum(kv, "goto", 0);
+		tc++;
+		KvGetSectionName(kv, sectionName, sizeof(sectionName));
+
+		/*tempInt = KvGetNum(kv, "goto", 0);
 		if(tempInt > 0) {
 			//Goto
 			IntToString(tempInt, tempText2, sizeof(tempText2));
 			if(wcWeaponLookup.GetValue(tempText2, tc)) {
-				wcWeaponLookup.SetValue(tempText, tc);
+				wcWeaponLookup.SetValue(sectionName, tc);
 			}
-			wcCount--;
+			tc--;
+			continue;
+		}*/
+
+		if(KvGetNum(kv, "enabled", 1) == 0) {
+			//This weapon is disabled, next weapon.
+			//The only reason this attiribute exists is to allow 
+			// operators to keep the weapon in the config.
+			tc--;
 			continue;
 		}
-		
-		tempInt = KvGetNum(kv, "enabled", 1);
-		if(tempInt == 0) {
-			wcCount--;
-			continue;
-		}
-		wcWeaponLookup.SetValue(tempText, tc);
-		wcAuto[tc]   = (KvGetNum(kv, "auto", 0)>0);
-		//wcEnable[tc] = (tempInt>0);
-		wcDamage[tc] =  KvGetFloat(kv, "damage", 100.0);
-		wcCycle[tc]  = 	KvGetFloat(kv, "cycle", 0.5);
+		PrintToChatAll(sectionName);
+		wcWeaponLookup.SetValue(sectionName, tc);
+		wcAuto[tc]   = (KvGetNum(kv, "FullAuto", 0)>0);
+		wcDamage[tc] =  KvGetFloat(kv, "Damage", 38.0);
+		wcBullets[tc] =  KvGetNum(kv, "Bullets", 1);
+		wcCycle[tc]  = 	KvGetFloat(kv, "CycleTime", 0.1);
+		//wcMax[tc]  = 	KvGetFloat(kv, "clip_size", 0.1);
 		
 	} while(KvGotoNextKey(kv));
 	CloseHandle(kv);
@@ -202,7 +208,7 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 	// 3. Holding attack1 while no ammo does not reload the weapon
 	// 4. Releasing attack1 with no ammo will automatically reload.
 	if(buttons & IN_RELOAD && !(plyButtons[client] & IN_RELOAD)) {
-		checkReload(client, false);
+		checkReload(client, true);
 	} else {
 		if(buttons & IN_ATTACK) {
 			float engineTime = GetEngineTime();
@@ -215,7 +221,7 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 			}
 		} else if(plyButtons[client] & IN_ATTACK) {
 			//Player releases attack1
-			checkReload(client, true);
+			checkReload(client, false);
 		}
 	}
 	//Check if buttons are in reload to reload the weapons
@@ -240,6 +246,7 @@ public void fireWeapon(int client, float engineTime) {
 	}
 
 	SetEntProp(weapon, Prop_Send, "m_iClip1", --clip);
+	//Used to determine if the player can reload.
 	SetEntProp(client, Prop_Send, "m_iShotsFired", GetEntProp(client, Prop_Send, "m_iShotsFired")+1);
 
 	int paintBall = createPaintball(client);
@@ -274,19 +281,19 @@ public void fireWeapon(int client, float engineTime) {
 	}
 }
 
-public void checkReload(int client, bool empty) {
+public void checkReload(int client, bool force) {
 	int weapon = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");
 	int clip = GetEntProp(weapon, Prop_Send, "m_iClip1");
-	PrintToChat(client, "clip: %i/%i", clip, plyMaxClip[client]);
-	if((empty && clip <= 0) || (!empty && clip < plyMaxClip[client])) {
+	if(clip <= 0) {
 		reloadOrSwitchWeapons(client, weapon);
+	} else if(clip < plyMaxClip[client] && force) {
+		reload(client, weapon);
 	}
 }
 
 new Float:SpinVel[3] = {0.0, 0.0, 0.0};
 public int createPaintball(client) {
-	int paintBall = CreateEntityByName("hegrenade_projectile");
-	PrintToChatAll("pb: %i", paintBall);
+	int paintBall = CreateEntityByName("decoy_projectile");
 	if(paintBall > 0) {
 		DispatchSpawn(paintBall);
 		SetEntityModel(paintBall, PB_MODEL);
@@ -296,7 +303,6 @@ public int createPaintball(client) {
 		SetEntPropEnt(paintBall, Prop_Send, "m_hOwnerEntity", client);
 		SetEntProp(paintBall, Prop_Data, "m_nNextThinkTick", -1);
 		SetEntProp(paintBall, Prop_Send, "m_usSolidFlags", 12);
-		SetEntPropFloat(paintBall, Prop_Data, "m_flSpeed", 0.4);
 		SetEntPropString(paintBall, Prop_Data, "m_iszBounceSound", "");
 		SetEntityMoveType(paintBall, MOVETYPE_FLY);
 		SDKHook(paintBall, SDKHook_StartTouch, OnPaintBallTouch);
@@ -337,15 +343,17 @@ public Action OnPaintBallTouch(int paintBall, int other) {
 		SDKHooks_TakeDamage(other, owner, owner, damage, DMG_BULLET, weapon, NULL_VECTOR, NULL_VECTOR);
 	} else {
 		//Hit World:
-		int infodecal = CreateEntityByName("infodecal");
+		/*int infodecal = CreateEntityByName("infodecal");
 		SetEntProp(infodecal, Prop_Data, "m_nModelIndex", pb_spray);
 		DispatchSpawn(infodecal);
 		SetEntityRenderColor(infodecal, 255, 0, 0, 255);
-		TeleportEntity(infodecal, position, NULL_VECTOR, NULL_VECTOR);
+		TeleportEntity(infodecal, position, NULL_VECTOR, NULL_VECTOR);*/
 	}
 	TE_SetupBloodSprite(position, NULL_VECTOR, teamColors[team], 25, pb_spray, pb_spray);
 	TE_SendToAll();
+	//Add custom sounds
 	EmitSoundToAll(sndImpact[GetRandomInt(0,3)], paintBall, _, _, _, 0.5, _, _, _, _, true, _);
+	
 	AcceptEntityInput(paintBall, "Kill");
 	if(IsValidEdict(paintBall)) {
 		RemoveEdict(paintBall);
@@ -355,24 +363,17 @@ public Action OnPaintBallTouch(int paintBall, int other) {
 
 public Action OnWeaponSwitch(int client, int weapon) {
 	if(plyPaintBall[client] || cEnabled.IntValue > 0) {
-		int index = GetEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex");
-		char tempString[32];
-		GetEntityClassname(weapon, tempString, sizeof(tempString));
-		PrintToChat(client, tempString);
-		IntToString(index, tempString, sizeof(tempString));
-		
-		if(wcWeaponLookup.GetValue(tempString,index)) {
+		char className[64];
+		GetWeaponClassname(weapon, className, sizeof(className));
+		int id;
+		if(wcWeaponLookup.GetValue(className,id)) {
 			setWeaponNextShoot(weapon, 3600000.0);
 			setNextShoot(client, 1.0);
-			plyAuto[client] = wcAuto[index];
-			//plyDamage[client] = wcDamage[index];//getDamage(weapon);
-			plyDamage[client] = getDamage(weapon);
-			PrintToChatAll("DG: %f", plyDamage[client]);
-			//plyCycle[client] = wcCycle[index];//getFireRateWeapon(weapon);
-			plyCycle[client] = getFireRateWeapon(weapon);
-			PrintToChatAll("FR: %f", plyCycle[client]);
+			plyAuto[client] = wcAuto[id];
+			plyDamage[client] = wcDamage[id];
+			plyCycle[client] = wcCycle[id];
+			plyBullets[client] = wcBullets[id];
 			plyMaxClip[client] = getMaxClip(weapon);
-			PrintToChatAll("MC: %i", plyMaxClip[client]);
 			plyEnabled[client] = true;
 		} else {
 			plyEnabled[client] = false;
@@ -409,6 +410,7 @@ public void disablePaintBallMode(int client) {
 		setPlayerNextShoot(client, 2.0);
 	}
 }
+
 //Stock Functions:
 public void setNextShoot(int client, float time) {
 	plyNextShoot[client] = GetEngineTime() + time;
@@ -417,15 +419,12 @@ public void setNextShoot(int client, float time) {
 public void setWeaponNextShoot(int weapon, float time) {
 	float gameTime = GetGameTime();
 	SetEntPropFloat(weapon, Prop_Send, "m_flNextPrimaryAttack", time + gameTime);
-	//SetEntPropFloat(weapon, Prop_Send, "m_flNextSecondaryAttack", time + gameTime);
 }
 
 public void setPlayerNextShoot(int client, float time) {
 	int weapon = GetEntPropEnt(client, Prop_Data, "m_hActiveWeapon");
 	float gameTime = GetGameTime();
 	SetEntPropFloat(weapon, Prop_Send, "m_flNextPrimaryAttack", time + gameTime);
-	//SetEntPropFloat(weapon, Prop_Send, "m_flNextSecondaryAttack", time + gameTime);
-	//SetEntPropFloat(client, Prop_Send, "m_flNextAttack", time + gameTime);
 }
 
 public bool TraceEye(int client, float pos[3]) {
@@ -448,9 +447,8 @@ public bool TraceEntityFilterPlayer(int entity, int contentsMask, int client) {
 }
 
 Handle hReloadOrSwitchWeapons;
-Handle hGetFireRate;
-Handle hGetDamage;
 Handle hGetMaxClip;
+Handle hReload;
 public void loadOffsets() {
 	Handle hGameConf = LoadGameConfigFile("paintball.games");
 	
@@ -461,17 +459,9 @@ public void loadOffsets() {
 	}
 	
 	StartPrepSDKCall(SDKCall_Entity);
-	PrepSDKCall_SetFromConf(hGameConf, SDKConf_Virtual, "GetCycleTime");
-	PrepSDKCall_SetReturnInfo(SDKType_Float, SDKPass_ByValue); 
-	if ((hGetFireRate = EndPrepSDKCall()) == null) {
-		LogError("[PaintBall] Unable to load GetCycleTime offset");
-	}
-	
-	StartPrepSDKCall(SDKCall_Entity);
-	PrepSDKCall_SetFromConf(hGameConf, SDKConf_Virtual, "GetDamage");
-	PrepSDKCall_SetReturnInfo(SDKType_PlainOldData, SDKPass_ByValue); 
-	if ((hGetDamage = EndPrepSDKCall()) == null) {
-		LogError("[PaintBall] Unable to load GetDamage offset");
+	PrepSDKCall_SetFromConf(hGameConf, SDKConf_Virtual, "Reload");
+	if ((hReload = EndPrepSDKCall()) == null) {
+		LogError("[PaintBall] Unable to load Reload offset");
 	}
 	
 	StartPrepSDKCall(SDKCall_Entity);
@@ -490,17 +480,36 @@ public void reloadOrSwitchWeapons(int client, int weapon) {
 	SetEntPropFloat(weapon, Prop_Send, "m_flNextPrimaryAttack", gameTime+36000.0);
 }
 
-public float getFireRateWeapon(int weapon) {
-	return SDKCall(hGetFireRate, weapon);
-}
-
-public float getDamage(int weapon) {
-	return SDKCall(hGetDamage, weapon);
+public void reload(int client, int weapon) {
+	float gameTime = GetGameTime();
+	SetEntPropFloat(weapon, Prop_Send, "m_flNextPrimaryAttack", gameTime-1.0);
+	SDKCall(hReload, weapon);
+	setNextShoot(client, GetEntPropFloat(weapon, Prop_Send, "m_flNextPrimaryAttack") - gameTime);
+	SetEntPropFloat(weapon, Prop_Send, "m_flNextPrimaryAttack", gameTime+36000.0);
 }
 
 public int getMaxClip(int weapon) {
 	return SDKCall(hGetMaxClip, weapon);
 }
 
-
-
+public void GetWeaponClassname(int weapon, char[] buffer, int size) {
+	/* Since cs:go likes to use items_game prefabs instead of weapon files on newly added weapons */
+	switch(GetEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex")) {
+		case 60: {
+			Format(buffer, size, "weapon_m4a1_silencer");
+		}
+		case 61: {
+			Format(buffer, size, "weapon_usp_silencer");
+		}
+		case 63: {
+			Format(buffer, size, "weapon_cz75a");
+		}
+		case 64: {
+			Format(buffer, size, "weapon_revolver");
+		}
+		default: {
+			GetEntityClassname(weapon, buffer, size);
+		}
+		
+	}
+}

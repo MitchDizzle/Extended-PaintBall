@@ -14,16 +14,6 @@
 				"windows"	"306"
 				"linux"		"312"
 			}
-			"GetDamage"
-			{
-				"windows"	"332"
-				"linux"		"338"
-			}
-			"GetCycleTime"
-			{
-				"windows"	"414"
-				"linux"		"420"
-			}
 			"GetMaxClip1"
 			{
 				"windows"	"347"
