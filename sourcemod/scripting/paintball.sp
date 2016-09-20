@@ -74,6 +74,7 @@ ConVar cSpeedMultiplier;
 ConVar cFireRateMultiplier;
 ConVar cHeadShotDistance;
 ConVar cDmgMultiplierHS;
+ConVar cHalt;
 
 bool playersCanShoot = true;
 
@@ -94,6 +95,7 @@ public OnPluginStart() {
 	cSpeedMultiplier = CreateConVar("sm_paintball_speed", "1.0", "Paintball Speed Multiplier"); //Too fast and it wont shoot straight.
 	cHeadShotDistance = CreateConVar("sm_paintball_hsdistance", "150.0", "Paintball Headshot Distance");
 	cDmgMultiplierHS = CreateConVar("sm_paintball_damagehs", "3.0", "Paintball Headshot Damage Multiplier");
+	cHalt = CreateConVar("sm_paintball_halt", "0", "PB: temporarily stops paintballs");
 
 	RegConsoleCmd("sm_paintball", Command_PaintBall, "Enable PaintBall mode");
 	RegConsoleCmd("sm_pb", Command_PaintBall, "Enable PaintBall mode");
@@ -215,7 +217,7 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 			if(plyNextShoot[client] < engineTime) {
 				//Check if player's weapon is auto or not.
 				//Gun is full auto or the player wasn't holding attack before.
-				if(playersCanShoot && (plyAuto[client] || !(plyButtons[client] & IN_ATTACK))) {
+				if(playersCanShoot && !cHalt.BoolValue && (plyAuto[client] || !(plyButtons[client] & IN_ATTACK))) {
 					fireWeapon(client, engineTime);
 				}
 			}
@@ -340,6 +342,7 @@ public Action OnPaintBallTouch(int paintBall, int other) {
 		//Damage Player
 		int weapon = GetEntPropEnt(paintBall, Prop_Send, "m_hThrower");
 		damage *= cDmgMultiplier.FloatValue;
+		//This ignores map damage filters..
 		SDKHooks_TakeDamage(other, owner, owner, damage, DMG_BULLET, weapon, NULL_VECTOR, NULL_VECTOR);
 	} else {
 		//Hit World:
@@ -355,9 +358,6 @@ public Action OnPaintBallTouch(int paintBall, int other) {
 	EmitSoundToAll(sndImpact[GetRandomInt(0,3)], paintBall, _, _, _, 0.5, _, _, _, _, true, _);
 	
 	AcceptEntityInput(paintBall, "Kill");
-	if(IsValidEdict(paintBall)) {
-		RemoveEdict(paintBall);
-	}
 	return Plugin_Continue;
 }
 
@@ -443,7 +443,7 @@ public bool TraceEye(int client, float pos[3]) {
 }
 
 public bool TraceEntityFilterPlayer(int entity, int contentsMask, int client) {
-	return (entity >= 0 && entity != client);
+	return (entity > MaxClients && entity != client);
 }
 
 Handle hReloadOrSwitchWeapons;
