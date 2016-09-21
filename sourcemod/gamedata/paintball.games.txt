@@ -8,13 +8,16 @@
 			{
 				"windows"	"292"
 				"linux"		"298"
-				"mac"		"298"
 			}
-			"FinishReload"
+			"Reload"
 			{
-				"windows"	"304"
-				"linux"		"310"
-				"mac"		"310"
+				"windows"	"306"
+				"linux"		"312"
+			}
+			"GetMaxClip1"
+			{
+				"windows"	"347"
+				"linux"		"353"
 			}
 		}
 	}
