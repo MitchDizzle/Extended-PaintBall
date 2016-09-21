@@ -1,7 +1,6 @@
 #pragma semicolon 1
 #include <sdktools>
 #include <sdkhooks>
-#include <DHooks>
 //Maybe make this optional?
 #include <WeaponAttachmentAPI>
 
@@ -78,7 +77,7 @@ ConVar cHalt;
 
 bool playersCanShoot = true;
 
-#define PLUGIN_VERSION "1.0.0"
+#define PLUGIN_VERSION "1.0.0-BETA"
 public Plugin myinfo = {
 	name = "Paint Ball",
 	author = "Mitch",
