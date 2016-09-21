@@ -22,6 +22,8 @@ float plyDamage[MAXPLAYERS+1];
 float plyCycle[MAXPLAYERS+1];
 int plyBullets[MAXPLAYERS+1];
 int plyMaxClip[MAXPLAYERS+1];
+float plyGravity[MAXPLAYERS+1];
+float plySpeed[MAXPLAYERS+1];
 bool plyEnabled[MAXPLAYERS+1];
 
 //Weapon configs
@@ -29,8 +31,11 @@ bool plyEnabled[MAXPLAYERS+1];
 #define MAXWEAPONS 50
 bool wcAuto[MAXWEAPONS]; 
 float wcDamage[MAXWEAPONS];
-int wcBullets[MAXPLAYERS+1];
+int wcBullets[MAXWEAPONS];
 float wcCycle[MAXWEAPONS];
+int wcClipSize[MAXWEAPONS];
+float wcGravity[MAXWEAPONS];
+float wcSpeed[MAXWEAPONS];
 /*int wcCustomImpactSound; //Also stores how many different sounds there are for this weapon.
 char wcImpactSound[MAXWEAPONS][MAXSOUNDS][128];
 int wcCustomFireSound;
@@ -74,6 +79,9 @@ ConVar cFireRateMultiplier;
 ConVar cHeadShotDistance;
 ConVar cDmgMultiplierHS;
 ConVar cHalt;
+ConVar cBulletGravity;
+ConVar cBulletGravityOverride;
+ConVar cBulletDrop;
 
 bool playersCanShoot = true;
 
@@ -87,7 +95,6 @@ public Plugin myinfo = {
 };
 
 public OnPluginStart() {
-
 	cEnabled = CreateConVar("sm_paintball_enable", "1", "Enable PaintBall");
 	cDmgMultiplier = CreateConVar("sm_paintball_damage", "1.0", "Paintball Damage Multiplier");
 	cFireRateMultiplier = CreateConVar("sm_paintball_firerate", "1.0", "Paintball Fire Rate Multiplier");
@@ -95,6 +102,11 @@ public OnPluginStart() {
 	cHeadShotDistance = CreateConVar("sm_paintball_hsdistance", "150.0", "Paintball Headshot Distance");
 	cDmgMultiplierHS = CreateConVar("sm_paintball_damagehs", "3.0", "Paintball Headshot Damage Multiplier");
 	cHalt = CreateConVar("sm_paintball_halt", "0", "PB: temporarily stops paintballs");
+	cBulletGravityOverride = CreateConVar("sm_paintball_gravity_override", "0", "PB: Allow the gravity convar to override the weapon's config");
+	cBulletGravity = CreateConVar("sm_paintball_gravity", "0.2", "PB: Changes the bullet gravity");
+	cBulletDrop = CreateConVar("sm_paintball_nodrop", "1", "PB: Should the bullet ever drop (MOVETYPE_FLY)");
+
+	AutoExecConfig(true);
 
 	RegConsoleCmd("sm_paintball", Command_PaintBall, "Enable PaintBall mode");
 	RegConsoleCmd("sm_pb", Command_PaintBall, "Enable PaintBall mode");
@@ -102,9 +114,9 @@ public OnPluginStart() {
 	loadOffsets();
 
 	loadConfig();
-	
+
 	bulletManager = new ArrayList();
-	
+
 	//Events
 	HookEvent("round_start", Event_RoundStart);
 	HookEvent("round_freeze_end", Event_RoundFreezeEnd);
@@ -114,7 +126,7 @@ public OnPluginStart() {
 			OnClientPutInServer(i);
 		}
 	}
-	
+
 	CreateConVar("sm_paintball_version", PLUGIN_VERSION, "Paintball Version", FCVAR_SPONLY|FCVAR_DONTRECORD);
 }
 
@@ -169,14 +181,16 @@ public void loadConfig() {
 			tc--;
 			continue;
 		}
-		PrintToChatAll(sectionName);
+
 		wcWeaponLookup.SetValue(sectionName, tc);
-		wcAuto[tc]   = (KvGetNum(kv, "FullAuto", 0)>0);
-		wcDamage[tc] =  KvGetFloat(kv, "Damage", 38.0);
-		wcBullets[tc] =  KvGetNum(kv, "Bullets", 1);
-		wcCycle[tc]  = 	KvGetFloat(kv, "CycleTime", 0.1);
-		//wcMax[tc]  = 	KvGetFloat(kv, "clip_size", 0.1);
-		
+		wcAuto[tc]    =(KvGetNum(kv, "FullAuto", 1)>0);
+		wcDamage[tc]  = KvGetFloat(kv, "Damage", 38.0);
+		wcBullets[tc] = KvGetNum(kv, "Bullets", 1);
+		wcCycle[tc]   = KvGetFloat(kv, "CycleTime", 0.1);
+		wcClipSize[tc]= KvGetNum(kv, "clip_size", 30);
+		wcGravity[tc] = KvGetFloat(kv, "gravity", 0.2);
+		wcSpeed[tc]   = KvGetFloat(kv, "speed", 1600.0);
+		//wcSpread[tc]  = KvGetFloat(kv, "spread", 0.0);
 	} while(KvGotoNextKey(kv));
 	CloseHandle(kv);
 }
@@ -220,7 +234,7 @@ public void fireWeapon(int client, float engineTime) {
 		fireRate = 0.01;
 	}
 	plyNextShoot[client] = engineTime + fireRate;
-	
+
 	//Check the weapon's clip
 	int weapon = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");
 	int clip = GetEntProp(weapon, Prop_Send, "m_iClip1");
@@ -235,7 +249,7 @@ public void fireWeapon(int client, float engineTime) {
 
 	int paintBall = createPaintball(client);
 	if(paintBall != -1) {
-		
+
 		SetEntPropEnt(paintBall, Prop_Send, "m_hThrower", weapon);
 		//Teleport and Launch the paintball in the facing direction
 		float shootPos[3];
@@ -246,11 +260,11 @@ public void fireWeapon(int client, float engineTime) {
 		MakeVectorFromPoints(shootPos, endPos, shootVel);
 		NormalizeVector(shootVel, shootVel);
 
-		ScaleVector(shootVel, 3000.0);
-
+		float speedMult = plySpeed[client];
 		if(cSpeedMultiplier.FloatValue != 1.0) {
-			ScaleVector(shootVel, cSpeedMultiplier.FloatValue);
+			speedMult *= cSpeedMultiplier.FloatValue;
 		}
+		ScaleVector(shootVel, speedMult);
 
 		float InitialAng[3];
 		GetVectorAngles(shootVel, InitialAng);
@@ -278,7 +292,7 @@ public void checkReload(int client, bool force) {
 float SpinVel[3] = {0.0, 0.0, 0.0};
 public int createPaintball(client) {
 	int paintBall;
-	if(bulletManager.Length > 1500) {
+	if(bulletManager.Length > 1600) {
 		//Remove the oldest paintball
 		paintBall = bulletManager.Get(0);
 		if(IsValidEntity(paintBall)) {
@@ -298,7 +312,18 @@ public int createPaintball(client) {
 		SetEntProp(paintBall, Prop_Data, "m_nNextThinkTick", -1);
 		SetEntProp(paintBall, Prop_Send, "m_usSolidFlags", 12);
 		SetEntPropString(paintBall, Prop_Data, "m_iszBounceSound", "");
-		SetEntityMoveType(paintBall, MOVETYPE_FLY);
+		if(!cBulletDrop.BoolValue) {
+			//Bullets should not drop while moving in the air.
+			SetEntityMoveType(paintBall, MOVETYPE_FLY);
+		}
+		if(cBulletGravityOverride.BoolValue && cBulletGravity.FloatValue != 1.0
+		) {
+			//Bullets will drop and gravity is not normal.
+			SetEntityGravity(paintBall, cBulletGravity.FloatValue);
+		} else {
+			//Set the gravity to the configured amount.
+			SetEntityGravity(paintBall, plyGravity[client]);
+		}
 		SDKHook(paintBall, SDKHook_StartTouch, OnPaintBallTouch);
 	}
 	bulletManager.Push(EntIndexToEntRef(paintBall));
@@ -337,26 +362,22 @@ public Action OnPaintBallTouch(int paintBall, int other) {
 		damage *= cDmgMultiplier.FloatValue;
 		//This ignores map damage filters..
 		SDKHooks_TakeDamage(other, owner, owner, damage, DMG_BULLET, weapon, NULL_VECTOR, NULL_VECTOR);
-	} else {
-		//Hit World:
-		/*int infodecal = CreateEntityByName("infodecal");
-		SetEntProp(infodecal, Prop_Data, "m_nModelIndex", pb_spray);
-		DispatchSpawn(infodecal);
-		SetEntityRenderColor(infodecal, 255, 0, 0, 255);
-		TeleportEntity(infodecal, position, NULL_VECTOR, NULL_VECTOR);*/
-	}
+	} /* else { //Hit World
+	} */
+
+	//Setup an explode sprite:
 	TE_SetupBloodSprite(position, NULL_VECTOR, teamColors[team], 25, pb_spray, pb_spray);
 	TE_SendToAll();
-	//Add custom sounds
+
+	//TODO: Add custom sounds
 	EmitSoundToAll(sndImpact[GetRandomInt(0,3)], paintBall, _, _, _, 0.5, _, _, _, _, true, _);
-	
+
 	//Clear paintball from bullet Manager
 	int index = bulletManager.FindValue(EntRefToEntIndex(paintBall));
 	if(index > -1) {
-		 bulletManager.Erase(index);
+		bulletManager.Erase(index);
 	}
 	AcceptEntityInput(paintBall, "Kill");
-	
 	return Plugin_Continue;
 }
 
@@ -373,6 +394,8 @@ public Action OnWeaponSwitch(int client, int weapon) {
 			plyCycle[client] = wcCycle[id];
 			plyBullets[client] = wcBullets[id];
 			plyMaxClip[client] = getMaxClip(weapon);
+			plyGravity[client] = wcGravity[id];
+			plySpeed[client] = wcSpeed[id];
 			plyEnabled[client] = true;
 		} else {
 			plyEnabled[client] = false;
@@ -397,8 +420,25 @@ public void togglePaintBallMode(int client) {
 public void enablePaintBallMode(int client) {
 	//Enable Paintball mode for this player
 	if(IsPlayerAlive(client)) {
-		//If the player is alive we need to set any netprops
-		setPlayerNextShoot(client, 3600000.0);
+		//Get clients active weapon from the config.
+		int weapon = GetEntPropEnt(client, Prop_Data, "m_hActiveWeapon");
+		if(weapon > MaxClients && IsValidEntity(weapon)) {
+			char className[64];
+			GetWeaponClassname(weapon, className, sizeof(className));
+			int id;
+			if(wcWeaponLookup.GetValue(className,id)) {
+				setWeaponNextShoot(weapon, 3600000.0);
+				setNextShoot(client, 1.0);
+				plyAuto[client] = wcAuto[id];
+				plyDamage[client] = wcDamage[id];
+				plyCycle[client] = wcCycle[id];
+				plyBullets[client] = wcBullets[id];
+				plyMaxClip[client] = getMaxClip(weapon);
+				plyEnabled[client] = true;
+			} else {
+				plyEnabled[client] = false;
+			}
+		}
 	}
 }
 
@@ -456,13 +496,13 @@ public void loadOffsets() {
 	if ((hReloadOrSwitchWeapons = EndPrepSDKCall()) == null) {
 		LogError("[PaintBall] Unable to load ReloadOrSwitchWeapons offset");
 	}
-	
+
 	StartPrepSDKCall(SDKCall_Entity);
 	PrepSDKCall_SetFromConf(hGameConf, SDKConf_Virtual, "Reload");
 	if ((hReload = EndPrepSDKCall()) == null) {
 		LogError("[PaintBall] Unable to load Reload offset");
 	}
-	
+
 	StartPrepSDKCall(SDKCall_Entity);
 	PrepSDKCall_SetFromConf(hGameConf, SDKConf_Virtual, "GetMaxClip1");
 	PrepSDKCall_SetReturnInfo(SDKType_PlainOldData, SDKPass_ByValue); 
@@ -472,19 +512,21 @@ public void loadOffsets() {
 }
 
 public void reloadOrSwitchWeapons(int client, int weapon) {
-	float gameTime = GetGameTime();
-	SetEntPropFloat(weapon, Prop_Send, "m_flNextPrimaryAttack", gameTime-1.0);
-	SDKCall(hReloadOrSwitchWeapons, weapon);
-	setNextShoot(client, GetEntPropFloat(weapon, Prop_Send, "m_flNextPrimaryAttack") - gameTime);
-	SetEntPropFloat(weapon, Prop_Send, "m_flNextPrimaryAttack", gameTime+36000.0);
+	sdkReload(client, weapon, hReloadOrSwitchWeapons);
 }
 
 public void reload(int client, int weapon) {
-	float gameTime = GetGameTime();
-	SetEntPropFloat(weapon, Prop_Send, "m_flNextPrimaryAttack", gameTime-1.0);
-	SDKCall(hReload, weapon);
-	setNextShoot(client, GetEntPropFloat(weapon, Prop_Send, "m_flNextPrimaryAttack") - gameTime);
-	SetEntPropFloat(weapon, Prop_Send, "m_flNextPrimaryAttack", gameTime+36000.0);
+	sdkReload(client, weapon, hReload);
+}
+
+public void sdkReload(int client, int weapon, Handle sdkcall) {
+	if(sdkcall != null) {
+		float gameTime = GetGameTime();
+		SetEntPropFloat(weapon, Prop_Send, "m_flNextPrimaryAttack", gameTime-1.0);
+		SDKCall(sdkcall, weapon);
+		setNextShoot(client, GetEntPropFloat(weapon, Prop_Send, "m_flNextPrimaryAttack") - gameTime);
+		SetEntPropFloat(weapon, Prop_Send, "m_flNextPrimaryAttack", gameTime+36000.0);
+	}
 }
 
 public int getMaxClip(int weapon) {
