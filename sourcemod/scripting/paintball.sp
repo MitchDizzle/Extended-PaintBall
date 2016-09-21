@@ -284,7 +284,7 @@ public int createPaintball(client) {
 		if(IsValidEntity(paintBall)) {
 			AcceptEntityInput(paintBall, "Kill");
 		}
-		bulletManager.Erase(index);
+		bulletManager.Erase(0);
 	}
 
 	paintBall = CreateEntityByName("decoy_projectile");
@@ -351,7 +351,7 @@ public Action OnPaintBallTouch(int paintBall, int other) {
 	EmitSoundToAll(sndImpact[GetRandomInt(0,3)], paintBall, _, _, _, 0.5, _, _, _, _, true, _);
 	
 	//Clear paintball from bullet Manager
-	int index = FindValue(EntRefToEntIndex(paintBall));
+	int index = bulletManager.FindValue(EntRefToEntIndex(paintBall));
 	if(index > -1) {
 		 bulletManager.Erase(index);
 	}
