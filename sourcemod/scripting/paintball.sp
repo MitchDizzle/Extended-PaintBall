@@ -109,7 +109,6 @@ public OnPluginStart() {
 	//Events
 	HookEvent("round_start", Event_RoundStart);
 	HookEvent("round_freeze_end", Event_RoundFreezeEnd);
-	HookEvent("weapon_reload", Event_WeaponReload);
 
 	for(int i = 1; i <= MaxClients; i++) {
 		if(IsClientInGame(i)) {
@@ -144,11 +143,6 @@ public void Event_RoundFreezeEnd(Event event, const char[] name, bool dontBroadc
 	playersCanShoot = true;
 }
 
-public void Event_WeaponReload(Event event, const char[] name, bool dontBroadcast) {
-	//We should reset the player's firedshots here..
-	PrintToChatAll("Reload!");
-}
-
 public void OnClientPutInServer(int client) {
 	SDKHook(client, SDKHook_WeaponSwitch, OnWeaponSwitch);
 }
@@ -168,17 +162,6 @@ public void loadConfig() {
 	do {
 		tc++;
 		KvGetSectionName(kv, sectionName, sizeof(sectionName));
-
-		/*tempInt = KvGetNum(kv, "goto", 0);
-		if(tempInt > 0) {
-			//Goto
-			IntToString(tempInt, tempText2, sizeof(tempText2));
-			if(wcWeaponLookup.GetValue(tempText2, tc)) {
-				wcWeaponLookup.SetValue(sectionName, tc);
-			}
-			tc--;
-			continue;
-		}*/
 
 		if(KvGetNum(kv, "enabled", 1) == 0) {
 			//This weapon is disabled, next weapon.
@@ -293,9 +276,19 @@ public void checkReload(int client, bool force) {
 	}
 }
 
-new Float:SpinVel[3] = {0.0, 0.0, 0.0};
+float SpinVel[3] = {0.0, 0.0, 0.0};
 public int createPaintball(client) {
-	int paintBall = CreateEntityByName("decoy_projectile");
+	int paintBall;
+	if(bulletManager.Length > 1500) {
+		//Remove the oldest paintball
+		paintBall = bulletManager.Get(0);
+		if(IsValidEntity(paintBall)) {
+			AcceptEntityInput(paintBall, "Kill");
+		}
+		bulletManager.Erase(index);
+	}
+
+	paintBall = CreateEntityByName("decoy_projectile");
 	if(paintBall > 0) {
 		DispatchSpawn(paintBall);
 		SetEntityModel(paintBall, PB_MODEL);
@@ -309,6 +302,7 @@ public int createPaintball(client) {
 		SetEntityMoveType(paintBall, MOVETYPE_FLY);
 		SDKHook(paintBall, SDKHook_StartTouch, OnPaintBallTouch);
 	}
+	bulletManager.Push(EntIndexToEntRef(paintBall));
 	return paintBall;
 }
 
@@ -357,7 +351,13 @@ public Action OnPaintBallTouch(int paintBall, int other) {
 	//Add custom sounds
 	EmitSoundToAll(sndImpact[GetRandomInt(0,3)], paintBall, _, _, _, 0.5, _, _, _, _, true, _);
 	
+	//Clear paintball from bullet Manager
+	int index = FindValue(EntRefToEntIndex(paintBall));
+	if(index > -1) {
+		 bulletManager.Erase(index);
+	}
 	AcceptEntityInput(paintBall, "Kill");
+	
 	return Plugin_Continue;
 }
 
