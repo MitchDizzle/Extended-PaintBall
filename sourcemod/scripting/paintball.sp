@@ -82,6 +82,7 @@ ConVar cHalt;
 ConVar cBulletGravity;
 ConVar cBulletGravityOverride;
 ConVar cBulletDrop;
+ConVar cBulletExplode;
 
 bool playersCanShoot = true;
 
@@ -105,6 +106,7 @@ public OnPluginStart() {
 	cBulletGravityOverride = CreateConVar("sm_paintball_gravity_override", "0", "PB: Allow the gravity convar to override the weapon's config");
 	cBulletGravity = CreateConVar("sm_paintball_gravity", "0.2", "PB: Changes the bullet gravity");
 	cBulletDrop = CreateConVar("sm_paintball_nodrop", "1", "PB: Should the bullet ever drop (MOVETYPE_FLY)");
+	cBulletExplode = CreateConVar("sm_paintball_explode", "0", "PB: Should the bullet explode on impact");
 
 	AutoExecConfig(true);
 
@@ -309,15 +311,13 @@ public int createPaintball(client) {
 		SetEntPropFloat(paintBall, Prop_Send, "m_flDamage", plyDamage[client]);
 		SetEntPropVector(paintBall, Prop_Data, "m_vecAngVelocity", SpinVel);
 		SetEntPropEnt(paintBall, Prop_Send, "m_hOwnerEntity", client);
-		SetEntProp(paintBall, Prop_Data, "m_nNextThinkTick", -1);
 		SetEntProp(paintBall, Prop_Send, "m_usSolidFlags", 12);
 		SetEntPropString(paintBall, Prop_Data, "m_iszBounceSound", "");
-		if(!cBulletDrop.BoolValue) {
+		if(cBulletDrop.BoolValue) {
 			//Bullets should not drop while moving in the air.
 			SetEntityMoveType(paintBall, MOVETYPE_FLY);
 		}
-		if(cBulletGravityOverride.BoolValue && cBulletGravity.FloatValue != 1.0
-		) {
+		if(cBulletGravityOverride.BoolValue) {
 			//Bullets will drop and gravity is not normal.
 			SetEntityGravity(paintBall, cBulletGravity.FloatValue);
 		} else {
@@ -335,6 +335,8 @@ public Action OnPaintBallTouch(int paintBall, int other) {
 	int team = GetClientTeam(owner);
 	float position[3];
 	GetEntPropVector(paintBall, Prop_Send, "m_vecOrigin", position);
+	float damage = GetEntPropFloat(paintBall, Prop_Send, "m_flDamage");
+	int weapon = GetEntPropEnt(paintBall, Prop_Send, "m_hThrower");
 	if(other > 0 && other <= MaxClients &&
 		IsClientInGame(other) &&
 		IsPlayerAlive(other)) {
@@ -347,7 +349,6 @@ public Action OnPaintBallTouch(int paintBall, int other) {
 			return Plugin_Continue;
 		}
 		int dmgType = DMG_BULLET|DMG_NEVERGIB;
-		float damage = GetEntPropFloat(paintBall, Prop_Send, "m_flDamage");
 		if(cHeadShotDistance.FloatValue > 0.0) {
 			//Shitty way of predicting if it was a headshot..
 			float eyePos[3];
@@ -358,7 +359,6 @@ public Action OnPaintBallTouch(int paintBall, int other) {
 			}
 		}
 		//Damage Player
-		int weapon = GetEntPropEnt(paintBall, Prop_Send, "m_hThrower");
 		damage *= cDmgMultiplier.FloatValue;
 		//This ignores map damage filters..
 		SDKHooks_TakeDamage(other, owner, owner, damage, DMG_BULLET, weapon, NULL_VECTOR, NULL_VECTOR);
@@ -377,7 +377,32 @@ public Action OnPaintBallTouch(int paintBall, int other) {
 	if(index > -1) {
 		bulletManager.Erase(index);
 	}
-	AcceptEntityInput(paintBall, "Kill");
+
+	if(cBulletExplode.BoolValue) {
+		//Create Explosion
+		new explosion = CreateEntityByName("env_explosion");
+		if (explosion != -1) {
+			char className[64] = "decoy_projectile";
+			if(IsValidEntity(weapon)) {
+				GetWeaponClassname(weapon, className, sizeof(className));
+			}
+			//Code from homingmissles
+			DispatchKeyValue(explosion, "classname", className);
+			SetEntProp(explosion, Prop_Data, "m_spawnflags", 6146);
+			SetEntProp(explosion, Prop_Data, "m_iMagnitude", RoundFloat(damage)); //Will add convars for the explosion damage.
+			SetEntProp(explosion, Prop_Data, "m_iRadiusOverride", 350);
+			DispatchSpawn(explosion);
+			ActivateEntity(explosion);
+			TeleportEntity(explosion, position, NULL_VECTOR, NULL_VECTOR);
+			SetEntPropEnt(explosion, Prop_Send, "m_hOwnerEntity", owner);
+			SetEntProp(explosion, Prop_Send, "m_iTeamNum", team);
+			AcceptEntityInput(explosion, "Explode");
+			DispatchKeyValue(explosion, "classname", "env_explosion");
+			AcceptEntityInput(explosion, "Kill");
+		}
+	}
+
+	AcceptEntityInput(paintBall, "Kill");	
 	return Plugin_Continue;
 }
 
