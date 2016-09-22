@@ -19,7 +19,6 @@ int pb_spray;
 //Player Variables;
 int plyWeapon[MAXPLAYERS+1];
 //int plyBullets[MAXPLAYERS+1]; //Player could go into burstmode
-int plyMaxClip[MAXPLAYERS+1];
 bool plyEnabled[MAXPLAYERS+1];
 
 //Weapon configs
@@ -29,13 +28,11 @@ bool wcAuto[MAXWEAPONS];
 float wcDamage[MAXWEAPONS];
 int wcBullets[MAXWEAPONS];
 float wcCycle[MAXWEAPONS];
-//int wcClipSize[MAXWEAPONS];
 float wcGravity[MAXWEAPONS];
 float wcSpeed[MAXWEAPONS];
 int wcExp[MAXWEAPONS]; // 0 - Off, 1 - Multiply, 2 - Set damage
 float wcExpDmg[MAXWEAPONS];
 int wcExpRad[MAXWEAPONS];
-//int wcMaxClip[MAXWEAPONS];
 StringMap wcWeaponLookup;
 
 //We need to have a system to prevent spawning too many bullets.
@@ -62,7 +59,7 @@ ConVar cBulletExpRad;
 
 bool playersCanShoot = true;
 
-#define PLUGIN_VERSION "1.0.1"
+#define PLUGIN_VERSION "1.0.2"
 public Plugin myinfo = {
 	name = "Extended Paint Ball",
 	author = "Mitch",
@@ -169,7 +166,6 @@ public void loadConfig() {
 		wcDamage[tc]  = KvGetFloat(kv, "Damage", 38.0);
 		wcBullets[tc] = KvGetNum(kv, "Bullets", 1);
 		wcCycle[tc]   = KvGetFloat(kv, "CycleTime", 0.1);
-		//wcClipSize[tc]= KvGetNum(kv, "clip_size", 30);
 		wcGravity[tc] = KvGetFloat(kv, "gravity", 0.2);
 		wcSpeed[tc]   = KvGetFloat(kv, "speed", 1600.0);
 		wcExp[tc]     = KvGetNum(kv, "explode", 0);
@@ -189,7 +185,7 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 		checkReload(client, true);
 	} else {
 		if(buttons & IN_ATTACK) {
-			float engineTime = GetEngineTime();
+			float engineTime = GetGameTime();
 			if(plyNextShoot[client] < engineTime) {
 				//Check if player's weapon is auto or not.
 				//Gun is full auto or the player wasn't holding attack before.
@@ -202,7 +198,6 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 			checkReload(client, false);
 		}
 	}
-	//Check if buttons are in reload to reload the weapons
 	plyButtons[client] = buttons;
 	return Plugin_Continue;
 }
@@ -245,6 +240,7 @@ public void fireWeapon(int client, float engineTime) {
 		SetEntPropFloat(paintBall, Prop_Send, "m_flDamage", wcDamage[id]);
 		SetEntProp(paintBall, Prop_Send, "m_nBody", id);
 		SetEntPropEnt(paintBall, Prop_Send, "m_hThrower", weapon);
+
 		//Teleport and Launch the paintball in the facing direction
 		float shootPos[3];
 		float endPos[3];
@@ -255,8 +251,6 @@ public void fireWeapon(int client, float engineTime) {
 		TraceEye(client, endPos);
 		MakeVectorFromPoints(shootPos, endPos, shootVel);
 		NormalizeVector(shootVel, shootVel);
-
-		ScaleVector(shootVel, 3000.0);
 
 		float speedMult = wcSpeed[id];
 		if(cSpeedMultiplier.FloatValue != 1.0) {
@@ -272,7 +266,7 @@ public void fireWeapon(int client, float engineTime) {
 		SetEntityRenderColor(paintBall, teamColors[team][0], teamColors[team][1], teamColors[team][2], 255);
 		TE_SetupBeamFollow(paintBall, precache_laser, -1, 0.2, 1.0, 0.0, 0, teamColors[team]);
 		TE_SendToAll();
-		//Sound Effects:
+		//Shooting Sound Effects:
 		EmitSoundToAll(sndFire[0], client, _, _, _, 0.4, GetRandomInt(85,100), _, _, _, true, _);
 	}
 }
@@ -314,7 +308,7 @@ public int createPaintball(client) {
 
 public Action OnPaintBallTouch(int paintBall, int other) {
 	int owner = GetEntPropEnt(paintBall, Prop_Send, "m_hOwnerEntity");
-	if(owner < 1 || owner > MaxClients || IsClientInGame(owner)) {
+	if(owner < 1 || owner > MaxClients || !IsClientInGame(owner)) {
 		removePaintBall(paintBall);
 		return Plugin_Continue;
 	}
@@ -323,7 +317,7 @@ public Action OnPaintBallTouch(int paintBall, int other) {
 	GetEntPropVector(paintBall, Prop_Send, "m_vecOrigin", position);
 	float damage = GetEntPropFloat(paintBall, Prop_Send, "m_flDamage");
 	int weapon = GetEntPropEnt(paintBall, Prop_Send, "m_hThrower");
-	int id = GetEntPropEnt(paintBall, Prop_Send, "m_nBody");
+	int id = GetEntProp(paintBall, Prop_Send, "m_nBody");
 	if(other > 0 && other <= MaxClients && IsClientInGame(other) && IsPlayerAlive(other)) {
 		//Hit Firing player or teammate:
 		if(owner == other || team == GetClientTeam(other)) {
@@ -365,10 +359,10 @@ public Action OnPaintBallTouch(int paintBall, int other) {
 			DispatchKeyValue(explosion, "classname", className);
 			SetEntProp(explosion, Prop_Data, "m_spawnflags", 6146);
 			if(cBulletExplode.IntValue > 0) {
-				SetEntProp(explosion, Prop_Data, "m_iMagnitude", (cBulletExplode.IntValue==1) ?RoundFloat(damage * cBulletExpDmg.FloatValue) : RoundFloat(cBulletExpDmg.FloatValue)); 
+				SetEntProp(explosion, Prop_Data, "m_iMagnitude", (cBulletExplode.IntValue==1) ? RoundFloat(damage * cBulletExpDmg.FloatValue) : RoundFloat(cBulletExpDmg.FloatValue)); 
 				SetEntProp(explosion, Prop_Data, "m_iRadiusOverride", cBulletExpRad.IntValue); 
 			} else if(wcExp[id] > 0) {
-				SetEntProp(explosion, Prop_Data, "m_iMagnitude", (wcExp[id]==1) ?RoundFloat(damage * wcExpDmg[id]) : RoundFloat(wcExpDmg[id])); 
+				SetEntProp(explosion, Prop_Data, "m_iMagnitude", (wcExp[id]==1) ? RoundFloat(damage * wcExpDmg[id]) : RoundFloat(wcExpDmg[id])); 
 				SetEntProp(explosion, Prop_Data, "m_iRadiusOverride", wcExpRad[id]);
 			}
 			DispatchSpawn(explosion);
@@ -401,7 +395,6 @@ public Action OnWeaponSwitch(int client, int weapon) {
 		if(wcWeaponLookup.GetValue(className, plyWeapon[client])) {
 			setWeaponNextShoot(weapon, 3600000.0);
 			setNextShoot(client, 1.0);
-			plyMaxClip[client] = getMaxClip(weapon);
 			plyEnabled[client] = true;
 		} else {
 			plyEnabled[client] = false;
@@ -432,7 +425,6 @@ public void enablePaintBallMode(int client) {
 			if(wcWeaponLookup.GetValue(className,plyWeapon[client])) {
 				setWeaponNextShoot(weapon, 3600000.0);
 				setNextShoot(client, 1.0);
-				plyMaxClip[client] = getMaxClip(weapon);
 				plyEnabled[client] = true;
 			} else {
 				plyEnabled[client] = false;
@@ -449,7 +441,7 @@ public void disablePaintBallMode(int client) {
 }
 //Stock Functions:
 public void setNextShoot(int client, float time) {
-	plyNextShoot[client] = GetEngineTime() + time;
+	plyNextShoot[client] = GetGameTime() + time;
 }
 public void setWeaponNextShoot(int weapon, float time) {
 	float gameTime = GetGameTime();
@@ -532,4 +524,12 @@ public void GetWeaponClassname(int weapon, char[] buffer, int size) {
 		case 64: Format(buffer, size, "weapon_revolver");
 		default: GetEntityClassname(weapon, buffer, size);
 	}
+}
+public bool isProgressiveReload(int weapon) {//m_reloadState
+	switch(GetEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex")) {
+		case 25: return true; //XM
+		case 29: return true; //Sawed off
+		case 35: return true; //Nova
+	}
+	return false;
 }
