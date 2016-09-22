@@ -13,6 +13,7 @@ keys = [
 ]
 ignoreList = [
 	"weapon_manifest.txt",
+	"weapon_rifle.txt",
 	"weapon_cubemap.txt",
 	"weapon_taser.txt",
 	"weapon_c4.txt",
