@@ -8,7 +8,6 @@
 #define DMG_HEADSHOT (1 << 29)
 #define LASER_SPRITE "materials/sprites/laserbeam.vmt"
 #define PB_SPLATTER "materials/decals/decal_paintsplatter002.vmt"
-#define PB_MODEL "models/props/cs_office/plant01_gib1.mdl"
 
 bool plyPaintBall[MAXPLAYERS+1] = {false, ...};
 float plyNextShoot[MAXPLAYERS+1];
@@ -51,7 +50,7 @@ char wcModel[MAXWEAPONS][128]; //Currently only one model can be defined.
 //We need to have a system to prevent spawning too many bullets.
 ArrayList bulletManager;
 
-//Default values:
+//Maybe we should have the colors either through config or convar?
 static const int teamColors[4][4] = {{255,255,255,255}, {64,255,64,200}, {255,64,64,200}, {64,64,255,200}};
 
 /* Convars */
