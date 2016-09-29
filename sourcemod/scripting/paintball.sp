@@ -104,7 +104,7 @@ public OnPluginStart() {
 	RegConsoleCmd("sm_pb", Command_PaintBall, "Enable PaintBall mode");
 
 	loadOffsets();
-	loadConfig();
+	wcWeaponLookup = new StringMap();
 
 	bulletManager = new ArrayList();
 
@@ -122,6 +122,7 @@ public OnPluginStart() {
 public void OnMapStart() {
 	pb_spray = PrecacheModel(PB_SPLATTER);
 	precache_laser = PrecacheModel(LASER_SPRITE);
+	loadConfig();
 }
 
 public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast) {
@@ -142,7 +143,7 @@ public void OnClientPutInServer(int client) {
 }
 
 public void loadConfig() {
-	wcWeaponLookup = new StringMap();
+	wcWeaponLookup.Clear();
 	char sPaths[PLATFORM_MAX_PATH];
 	BuildPath(Path_SM, sPaths, sizeof(sPaths),"configs/paintball_weapons.cfg");
 	KeyValues kv = new KeyValues("PBWeapons");
@@ -185,6 +186,7 @@ public void loadConfig() {
 		//wcSpread[tc]  = kv.GetFloat("spread", 0.0);
 
 		//Get Weapon Shoot Sound
+		wcShootSounds[tc] = 0;
 		for(int i=0; i < MAXSOUNDS;i++) {
 			Format(tempString, sizeof(tempString), "shoot%i", i+1);
 			kv.GetString(tempString, tempString, sizeof(tempString), "");
@@ -201,6 +203,7 @@ public void loadConfig() {
 		}
 
 		//Get Weapon Impact Sound
+		wcImpactSounds[tc] = 0;
 		for(int i=0; i < MAXSOUNDS;i++) {
 			Format(tempString, sizeof(tempString), "impact%i", i+1);
 			kv.GetString(tempString, tempString, sizeof(tempString), "");
@@ -280,6 +283,10 @@ public void fireWeapon(int client, float engineTime) {
 		fireRate = 0.01;
 	}
 	plyNextShoot[client] = engineTime + fireRate;
+	
+	if(GetEntProp(client, Prop_Send, "m_bIsDefusing") > 0 || GetEntProp(client, Prop_Send, "m_bIsGrabbingHostage") > 0) {
+		return;
+	}
 
 	//Check the weapon's clip
 	int weapon = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");
