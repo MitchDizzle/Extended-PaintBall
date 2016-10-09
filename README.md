@@ -33,6 +33,16 @@ Most of these will change in the future.
 
 `sm_paintball_nodrop <0/1>` Determines if the paintball should fly through the air (MOVETYPE_FLY)
 
+`sm_paintball_explode <0/1>` Determines if the paintball should explode
+
+`sm_paintball_explode_radius <0/X>` The damage multiplier for the explosion
+
+`sm_paintball_explode_damagemult <0.0/X.X>` The damage multiplier for the explosion
+
+`sm_paintball_bounce <0/X>` The amount of times that the paintball will bounce
+
+`sm_paintball_decay <-1.0/X.X>` The amount of time before the paintball is removed, -1.0 to disable.
+
 <more documentation needed>
 
 Config
@@ -43,16 +53,24 @@ Sample Weapon Config:
 ```
 "PBWeapons"
 {
-	"weapon_base"
+	"WEAPON_NAME"
 	{
-		"enable"		"1" //Enable this weapon to shoot paintballs (Default 1)
-		"FullAuto"		"1" //Constantly fire while holding down the mouse button.
-		"Damage"		"38" //Damage done on impact
-		"Bullets"		"1" //Bullets shot
-		"CycleTime"		"0.1" //Fire rate of the weapon.
-		"clip_size"		"30" //Clipsize of the weapon, currently uses gamedata to find this.
-		"gravity"		"0.2" //The gravity of the paintballs this weapon shoots
-		"speed"			"1600.0" //The base speed of the paintballs this weapon shoots
+		"enable"			"1" //Enable this weapon to shoot paintballs (Default 1)
+		"FullAuto"			"1" //Constantly fire while holding down the mouse button.
+		"Damage"			"38" //Damage done on impact
+		"Bullets"			"1" //Bullets shot
+		"CycleTime"			"0.1" //Fire rate of the weapon.
+		"gravity"			"0.2" //The gravity of the paintballs this weapon shoots
+		"speed"				"1600.0" //The base speed of the paintballs this weapon shoots
+		"explode"			"0" //1 Explodes on impact
+		"explode_dmgmult"	"2.0" //Explosion damage multiplier
+		"explode_radius"	"350" //Explosion Radius
+		"bounce"			"0" //Times the paintball can bounce
+		"decay"				"0.0" //Amount of time until the paintball is removed
+		"model"				"MODEL_FILE_PATH"
+		//Sounds can be listed from 1 to 10 (MAX_SOUNDS), X respresenting a number.
+		"shootX"			"SOUND_FILE_PATH;MIN_PITCH;MAX_PITCH" //The custom shoot sound
+		"impactX"			"SOUND_FILE_PATH;MIN_PITCH;MAX_PITCH"
 	}
 }
 ```
