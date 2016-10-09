@@ -60,7 +60,6 @@ Sample Weapon Config:
 		"Damage"			"38" //Damage done on impact
 		"Bullets"			"1" //Bullets shot
 		"CycleTime"			"0.1" //Fire rate of the weapon.
-		"clip_size"			"30" //Clipsize of the weapon, currently uses gamedata to find this.
 		"gravity"			"0.2" //The gravity of the paintballs this weapon shoots
 		"speed"				"1600.0" //The base speed of the paintballs this weapon shoots
 		"explode"			"0" //1 Explodes on impact

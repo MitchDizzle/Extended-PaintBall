@@ -1,8 +1,10 @@
 #pragma semicolon 1
 #include <sdktools>
 #include <sdkhooks>
-//Maybe make this optional?
+
+#undef REQUIRE_PLUGIN
 #include <WeaponAttachmentAPI>
+bool useAttachmentAPI;
 
 //CSGO Specifics
 #define DMG_HEADSHOT (1 << 29)
@@ -74,7 +76,7 @@ ConVar cBulletDecay;
 
 bool playersCanShoot = true;
 
-#define PLUGIN_VERSION "1.1.0"
+#define PLUGIN_VERSION "1.2.0"
 public Plugin myinfo = {
 	name = "Extended Paint Ball",
 	author = "Mitch",
@@ -83,11 +85,15 @@ public Plugin myinfo = {
 	url = "http://mtch.tech"
 };
 
+public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max) {
+	__pl_WeaponAttachmentAPI_SetNTVOptional();
+}
+
 public OnPluginStart() {
 	cEnabled = CreateConVar("sm_paintball_enable", "1", "Enable PaintBall");
 	cDmgMultiplier = CreateConVar("sm_paintball_damage", "1.0", "Paintball Damage Multiplier");
-	cFireRateMultiplier = CreateConVar("sm_paintball_firerate", "-1.0", "Paintball Fire Rate Multiplier");
-	cSpeedMultiplier = CreateConVar("sm_paintball_speed", "-1.0", "Paintball Speed Multiplier"); //Too fast and it wont shoot straight.
+	cFireRateMultiplier = CreateConVar("sm_paintball_firerate", "1.0", "Paintball Fire Rate Multiplier");
+	cSpeedMultiplier = CreateConVar("sm_paintball_speed", "1.0", "Paintball Speed Multiplier"); //Too fast and it wont shoot straight.
 	cHeadShotDistance = CreateConVar("sm_paintball_hsdistance", "150.0", "Paintball Headshot Distance");
 	cDmgMultiplierHS = CreateConVar("sm_paintball_damagehs", "3.0", "Paintball Headshot Damage Multiplier");
 	cHalt = CreateConVar("sm_paintball_halt", "0", "PB: temporarily stops paintballs");
@@ -100,9 +106,6 @@ public OnPluginStart() {
 	cBulletDecay = CreateConVar("sm_paintball_decay", "-1.0", "PB: The amount of time the bullet will be removed. (OVERRIDES CONFIG)");
 
 	AutoExecConfig(true);
-
-	RegConsoleCmd("sm_paintball", Command_PaintBall, "Enable PaintBall mode");
-	RegConsoleCmd("sm_pb", Command_PaintBall, "Enable PaintBall mode");
 
 	loadOffsets();
 	wcWeaponLookup = new StringMap();
@@ -118,6 +121,16 @@ public OnPluginStart() {
 		}
 	}
 	CreateConVar("sm_paintball_version", PLUGIN_VERSION, "Paintball Version", FCVAR_SPONLY|FCVAR_DONTRECORD);
+	
+	if(LibraryExists("WeaponAttachmentAPI")) {
+		useAttachmentAPI = true;
+	}
+}
+
+public OnLibraryAdded(const char[] name) {
+	if (StrEqual(name, "WeaponAttachmentAPI")) {
+		useAttachmentAPI = true;
+	}
 }
 
 public void OnMapStart() {
@@ -317,7 +330,8 @@ public void fireWeapon(int client, float engineTime) {
 		float shootPos[3];
 		float endPos[3];
 		float shootVel[3];
-		WA_GetAttachmentPos(client, "muzzle_flash", shootPos);
+		
+		getShootPos(client, shootPos);
 		
 		//Engage accuracy
 		TraceEye(client, endPos);
@@ -346,6 +360,28 @@ public void fireWeapon(int client, float engineTime) {
 		if(wcSounds.GetString(wcShootSoundIndex[tempId][soundId], soundBuffer, sizeof(soundBuffer)) > 0) {
 			EmitSoundToAll(soundBuffer, client, _, _, _, 0.4, pitch, _, _, _, true, _);
 		}
+	}
+}
+
+public void getShootPos(int client, float position[3]) {
+	if(useAttachmentAPI) {
+		WA_GetAttachmentPos(client, "muzzle_flash", position);
+		return;
+	}
+	//Bommix's code
+	float playerpos[3], playerangle[3], vecfwr[3];	
+	GetClientEyePosition(client, playerpos);
+	GetClientEyeAngles(client, playerangle);
+	GetAngleVectors(playerangle, vecfwr, NULL_VECTOR, NULL_VECTOR);
+	AddInFrontOf(playerpos, playerangle, 50.0, position);
+}
+
+stock void AddInFrontOf(float vecOrigin[3], float vecAngle[3], float units, float output[3]) {
+	float vecAngVectors[3];
+	vecAngVectors = vecAngle; //Don't change input
+	GetAngleVectors(vecAngVectors, vecAngVectors, NULL_VECTOR, NULL_VECTOR);
+	for (int i; i < 3; i++) {
+		output[i] = vecOrigin[i] + (vecAngVectors[i] * units);
 	}
 }
 
@@ -465,7 +501,7 @@ public Action OnPaintBallTouch(int paintBall, int other) {
 			damage *= cDmgMultiplier.FloatValue;
 		}
 		//This ignores map damage filters..
-		SDKHooks_TakeDamage(other, weapon, owner, damage, dmgType, weapon, NULL_VECTOR, NULL_VECTOR);
+		SDKHooks_TakeDamage(other, (weapon != -1) ? weapon : owner, owner, damage, dmgType, weapon, NULL_VECTOR, NULL_VECTOR);
 	} /* else { //Hit World
 	} */
 
@@ -547,43 +583,6 @@ public Action OnWeaponSwitch(int client, int weapon) {
 	}
 }
 
-public Action Command_PaintBall(int client, int args) {
-	togglePaintBallMode(client);
-	return Plugin_Handled;
-}
-public void togglePaintBallMode(int client) {
-	plyPaintBall[client] = !plyPaintBall[client];
-	if(plyPaintBall[client]) {
-		enablePaintBallMode(client);
-	} else {
-		disablePaintBallMode(client);
-	}
-}
-public void enablePaintBallMode(int client) {
-	//Enable Paintball mode for this player
-	if(IsPlayerAlive(client)) {
-		//Get clients active weapon from the config.
-		int weapon = GetEntPropEnt(client, Prop_Data, "m_hActiveWeapon");
-		if(weapon > MaxClients && IsValidEntity(weapon)) {
-			char className[64];
-			GetWeaponClassname(weapon, className, sizeof(className));
-			if(wcWeaponLookup.GetValue(className,plyWeapon[client])) {
-				setWeaponNextShoot(weapon, 3600000.0);
-				setNextShoot(client, 1.0);
-				plyEnabled[client] = true;
-			} else {
-				plyEnabled[client] = false;
-			}
-		}
-	}
-}
-public void disablePaintBallMode(int client) {
-	//Disable Paintball mode for this player
-	if(IsPlayerAlive(client)) {
-		//If the player is alive we need to reset any netprops
-		setPlayerNextShoot(client, 2.0);
-	}
-}
 //Stock Functions:
 public void setNextShoot(int client, float time) {
 	plyNextShoot[client] = GetGameTime() + time;
