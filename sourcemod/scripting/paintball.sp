@@ -76,7 +76,7 @@ ConVar cBulletDecay;
 
 bool playersCanShoot = true;
 
-#define PLUGIN_VERSION "1.2.0"
+#define PLUGIN_VERSION "1.2.1"
 public Plugin myinfo = {
 	name = "Extended Paint Ball",
 	author = "Mitch",
@@ -313,6 +313,9 @@ public void fireWeapon(int client, float engineTime) {
 
 	//Check the weapon's clip
 	int weapon = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");
+	if(weapon == -1) {
+		return;
+	}
 	int clip = GetEntProp(weapon, Prop_Send, "m_iClip1");
 	if(clip <= 0) {
 		//Don't fire if there's no ammo.
@@ -391,10 +394,12 @@ public void KillPaintBall(const char[] output, int paintBall, int activator, flo
 
 public void checkReload(int client, bool force) {
 	int weapon = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");
-	if(GetEntProp(weapon, Prop_Send, "m_iClip1") <= 0) {
-		reloadOrSwitchWeapons(client, weapon);
-	} else if(force) {
-		reload(client, weapon);
+	if(weapon > MaxClients && IsValidEntity(weapon)) {
+		if(GetEntProp(weapon, Prop_Send, "m_iClip1") <= 0) {
+			reloadOrSwitchWeapons(client, weapon);
+		} else if(force) {
+			reload(client, weapon);
+		}
 	}
 }
 
